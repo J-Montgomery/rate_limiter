@@ -15,6 +15,22 @@ public:
   ReturnValue operator()(Args... args) const { return func(args...); }
 };
 
+template <typename FunctionType, FunctionType func> struct RateLimiterClass;
+template <typename ReturnType, typename Obj, typename... Args,
+          ReturnType (*func)(Args...)>
+struct RateLimiterClass<ReturnType (*)(Args...), func> {
+  bool enabled{true};
+  ReturnType operator()(Args... args) {
+    if (enabled) {
+      return func(args...);
+    } else {
+      return ReturnType{};
+    }
+  }
+};
+#define MAKE_WRAPPER(cl, func)                                                 \
+  RateLimiterClass<decltype(&func), func> {}
+
 template <typename FunctionType, FunctionType func> struct RateLimiterBare;
 template <typename ReturnType, typename... Args, ReturnType (*func)(Args...)>
 struct RateLimiterBare<ReturnType (*)(Args...), func> {
