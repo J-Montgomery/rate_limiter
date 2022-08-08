@@ -16,17 +16,20 @@ public:
   RateLimiterClass(Obj cl, ReturnType (Obj::*member)(Args...), Rate rate)
       : rate(rate), tokens(rate), func{[=](Args... as) mutable {
           return (cl.*member)(as...);
-        }} {}
+        }} {
+    last_timestamp = std::chrono::system_clock::now();
+  }
 
   ReturnType operator()(Args... args) {
     std::chrono::time_point<std::chrono::system_clock> timestamp =
         std::chrono::system_clock::now();
-    std::chrono::duration<double> duration = timestamp - last_timestamp;
+    auto duration = timestamp - last_timestamp;
     last_timestamp = timestamp;
 
     // If we haven't been invoked in awhile, add an appropriate number of tokens
     // to the bucket
-    tokens += static_cast<Rate>(duration.count() * rate);
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);
+    tokens += static_cast<Rate>(seconds.count() * rate);
 
     if (tokens > rate) {
       tokens =
@@ -37,8 +40,8 @@ public:
       // drop call
       return ReturnType{};
     } else {
-      return func(args...);
       tokens -= (Rate)1;
+      return func(args...);
     }
   }
 };
@@ -54,17 +57,20 @@ private:
   std::chrono::time_point<std::chrono::system_clock> last_timestamp;
 
 public:
-  RateLimiterBare(Rate rate) : rate(rate), tokens(rate){};
+  RateLimiterBare(Rate rate) : rate(rate), tokens(rate) {
+    last_timestamp = std::chrono::system_clock::now();
+  };
 
   ReturnType operator()(Args... args) {
     std::chrono::time_point<std::chrono::system_clock> timestamp =
         std::chrono::system_clock::now();
-    std::chrono::duration<double> duration = timestamp - last_timestamp;
+    auto duration = timestamp - last_timestamp;
     last_timestamp = timestamp;
 
     // If we haven't been invoked in awhile, add an appropriate number of tokens
     // to the bucket
-    tokens += static_cast<Rate>(duration.count() * rate);
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);
+    tokens += static_cast<Rate>(seconds.count() * rate);
 
     if (tokens > rate) {
       tokens =
@@ -75,8 +81,8 @@ public:
       // drop call
       return ReturnType{};
     } else {
-      return func(args...);
       tokens -= (Rate)1;
+      return func(args...);
     }
   }
 };
@@ -88,17 +94,20 @@ public:
   RateLimiterBare<decltype(&func), decltype(rate), func> { rate }
 
 struct foo {
-  long long bar(int a, long b, long long c) { return a + b + c; }
+  long long bar(int a, long b, long long c) {
+    std::cout << "bar called" << std::endl;
+    return a + b + c;
+  }
 };
 
-int foobar(int a) { 
+int foobar(int a) {
   std::cout << "foo called" << std::endl;
   return a;
-  }
+}
 
 int main() {
   foo f;
-  float rate = 3.0;
+  float rate = 4.0;
 
   auto tmp = MAKE_WRAPPER(foobar, rate);
   auto tmp2 = MAKE_WRAPPER_CLASS(f, &foo::bar, rate);
@@ -110,6 +119,19 @@ int main() {
   tmp(3);
   tmp(3);
   tmp(3);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
+  tmp2(1, 2l, 3ll);
   std::cout << tmp(3) << std::endl;
   std::cout << tmp2(1, 2l, 3ll) << std::endl;
 }
