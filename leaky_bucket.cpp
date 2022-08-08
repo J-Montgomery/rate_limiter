@@ -1,50 +1,80 @@
 #include <functional>
 #include <iostream>
+#include <chrono>
 
-template <typename FunctionType> class Rate_Limiter;
+template <typename FunctionType, typename Rate> class RateLimiterClass;
 
-template <typename ReturnValue, typename Obj, typename... Args>
-class Rate_Limiter<ReturnValue (Obj::*)(Args...)> {
+template <typename ReturnType, typename Obj, typename Rate, typename... Args>
+class RateLimiterClass<ReturnType (Obj::*)(Args...), Rate> {
 private:
-  std::function<ReturnValue(Args...)> func;
+    Rate rate;
+    Rate tokens;
+    std::chrono::time_point<std::chrono::system_clock> last_timestamp;
+    std::function<ReturnType(Args...)> func;
 
 public:
-  Rate_Limiter(Obj cl, ReturnValue (Obj::*member)(Args...))
-      : func{[=](Args... as) mutable { return (cl.*member)(as...); }} {}
+  RateLimiterClass(Obj cl, ReturnType (Obj::*member)(Args...), Rate rate)
+      : rate(rate), tokens(rate), func{[=](Args... as) mutable { return (cl.*member)(as...); }} {}
 
-  ReturnValue operator()(Args... args) const { return func(args...); }
-};
+  ReturnType operator()(Args... args) { 
+    std::chrono::time_point<std::chrono::system_clock> timestamp = std::chrono::system_clock::now();
+    std::chrono::duration<double> duration = timestamp - last_timestamp;
+    last_timestamp = timestamp;
+    
+    // If we haven't been invoked in awhile, add an appropriate number of tokens to the bucket
+    tokens += static_cast<Rate>(duration.count() * rate);
 
-template <typename FunctionType, FunctionType func> struct RateLimiterClass;
-template <typename ReturnType, typename Obj, typename... Args,
-          ReturnType (*func)(Args...)>
-struct RateLimiterClass<ReturnType (*)(Args...), func> {
-  bool enabled{true};
-  ReturnType operator()(Args... args) {
-    if (enabled) {
-      return func(args...);
+    if(tokens > rate) {
+        tokens = rate; // ensure that we never have more than rate tokens in the bucket
+    }
+
+    if(tokens < (Rate)1) {
+        // drop call
+        return ReturnType{};
     } else {
-      return ReturnType{};
+        return func(args...);
+        tokens -= (Rate)1;
     }
   }
 };
-#define MAKE_WRAPPER(cl, func)                                                 \
-  RateLimiterClass<decltype(&func), func> {}
 
-template <typename FunctionType, FunctionType func> struct RateLimiterBare;
-template <typename ReturnType, typename... Args, ReturnType (*func)(Args...)>
-struct RateLimiterBare<ReturnType (*)(Args...), func> {
-  bool enabled{true};
+template <typename FunctionType, typename Rate, FunctionType func> struct RateLimiterBare;
+template <typename ReturnType, typename Rate, typename... Args, ReturnType (*func)(Args...)>
+struct RateLimiterBare<ReturnType (*)(Args...), Rate, func> {
+private:
+    Rate rate;
+    Rate tokens;
+    std::chrono::time_point<std::chrono::system_clock> last_timestamp;
+public:
+    RateLimiterBare(Rate rate) : rate(rate), tokens(rate) {};
+
   ReturnType operator()(Args... args) {
-    if (enabled) {
-      return func(args...);
+    std::chrono::time_point<std::chrono::system_clock> timestamp = std::chrono::system_clock::now();
+    std::chrono::duration<double> duration = timestamp - last_timestamp;
+    last_timestamp = timestamp;
+    
+    // If we haven't been invoked in awhile, add an appropriate number of tokens to the bucket
+    tokens += static_cast<Rate>(duration.count() * rate);
+
+    if(tokens > rate) {
+        tokens = rate; // ensure that we never have more than rate tokens in the bucket
+    }
+
+    if(tokens < (Rate)1) {
+        // drop call
+        return ReturnType{};
     } else {
-      return ReturnType{};
+        return func(args...);
+        tokens -= (Rate)1;
     }
   }
 };
-#define MAKE_WRAPPER(func)                                                     \
-  RateLimiterBare<decltype(&func), func> {}
+
+#define MAKE_WRAPPER_CLASS(cl, func, rate)                                                     \
+    RateLimiterClass<decltype(func), decltype(rate)> {cl, func, rate}
+
+#define MAKE_WRAPPER(func, rate)                                                     \
+  RateLimiterBare<decltype(&func), decltype(rate), func> {rate}
 
 struct foo {
   long long bar(int a, long b, long long c) { return a + b + c; }
@@ -54,10 +84,11 @@ int foobar(int a) { return a; }
 
 int main() {
   foo f;
+  float rate = 3.0;
 
-  Rate_Limiter<decltype(&foo::bar)> wfb{f, &foo::bar};
-  auto tmp = MAKE_WRAPPER(foobar);
+  auto tmp = MAKE_WRAPPER(foobar, rate);
+  auto tmp2 = MAKE_WRAPPER_CLASS(f, &foo::bar, rate);
 
-  std::cout << wfb(1, 2l, 3ll) << std::endl;
   std::cout << tmp(3) << std::endl;
+  std::cout << tmp2(1, 2l, 3ll) << std::endl;
 }
