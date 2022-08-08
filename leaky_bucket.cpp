@@ -87,10 +87,10 @@ public:
   }
 };
 
-#define MAKE_WRAPPER_CLASS(cl, func, rate)                                     \
+#define MEMBER_RATE_LIMIT(cl, func, rate)                                      \
   RateLimiterClass<decltype(func), decltype(rate)> { cl, func, rate }
 
-#define MAKE_WRAPPER(func, rate)                                               \
+#define RATE_LIMIT(func, rate)                                                 \
   RateLimiterBare<decltype(&func), decltype(rate), func> { rate }
 
 struct foo {
@@ -109,8 +109,8 @@ int main() {
   foo f;
   float rate = 4.0;
 
-  auto tmp = MAKE_WRAPPER(foobar, rate);
-  auto tmp2 = MAKE_WRAPPER_CLASS(f, &foo::bar, rate);
+  auto tmp = RATE_LIMIT(foobar, rate);
+  auto tmp2 = MEMBER_RATE_LIMIT(f, &foo::bar, rate);
 
   tmp(3);
   tmp(3);
